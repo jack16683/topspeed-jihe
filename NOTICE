@@ -1,0 +1,7 @@
+极速鸡盒
+
+Ride event estimators adapted from RyanYuFish/SpeedHunter-iOS
+https://github.com/RyanYuFish/SpeedHunter-iOS/tree/bd17ef6e9ad01ec135aeba8666391e1e259a8234
+Upstream code is licensed under AGPL-3.0.
+Local adaptation: response handling, validation, persistent cache, and Loon packaging.
+Source code and tests are included in this repository.

@@ -1,0 +1,12 @@
+{
+  "format": "LPXE v2",
+  "bundledScripts": 2,
+  "remoteResources": 0,
+  "aesRoundTrips": 3,
+  "bytes": 17774,
+  "sha256": "8673db5bc19aaab9ee1ae8231a1039890a839bb0111f3849c24522ef8fa6169a",
+  "referenceCommit": "bd17ef6e9ad01ec135aeba8666391e1e259a8234",
+  "offlineTests": 16,
+  "cachePolicy": "reuse-existing-including-zero",
+  "deviceValidated": false
+}

@@ -1,0 +1,15 @@
+#!name = 极速鸡盒
+#!desc = 知道你的鸡盒到底有多快
+#!author = Ethan
+#!system = iOS,iPadOS
+#!loon_version = 3.5.1(983)
+#!date = 2026-11-14
+#!tag = 鸡盒,骑行,统计
+
+[Script]
+response if ${url} ~= /^https:\/\/tapi\.zeehoev\.com\/v1\.0\/app\/cfmotoserverapp\/(?:[^/?]+\/)*(?:vehicleHomePageV2|vehicle\/list|ridetrack_v2|myRideInfo|homeRideInfo|analyse)(?:\?|$)/ then script("scripts/ride-fill.js") with tag="极速鸡盒 统计补全", requires_body=true, timeout=30
+generic then script("scripts/cache-tools.js", "status") with tag="极速鸡盒 查看缓存", timeout=10
+generic then script("scripts/cache-tools.js", "clear") with tag="极速鸡盒 清空缓存", timeout=10
+
+[Mitm]
+hostname = tapi.zeehoev.com
