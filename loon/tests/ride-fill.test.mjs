@@ -24,10 +24,10 @@ function run(endpoint,data,{store=new Map(),vin='TESTVIN12345678901',uid='a',raw
   return {data:dataOut,patch:done[0],store,logs,writes};
 }
 const ms=Date.UTC(2026,10,12);
-const speeds=[40,40,35,20,10,5,5,5];
-const braking=(offset=0,ts=ms)=>speeds.map((v,i)=>[120+i*.0002,30,v,ts+i*2000+offset].join(',')).join('&');
+const speeds=[40,40,36,32,28,24,20,16,12,8,4,0,0,0,0];
+const braking=(offset=0,ts=ms)=>{let x=0;return speeds.map((v,i)=>{if(i)x+=(speeds[i-1]+v)/2/3.6*.2;return [120+x/(111320*Math.cos(Math.PI/6)),30,v,ts+i*200+offset].join(',');}).join('&');};
 const straight=()=>speeds.map((_,i)=>[120+i*.0002,30,40,ms+i*2000].join(',')).join('&');
-function bend(){return Array.from({length:9},(_,i)=>{const a=i*10*Math.PI/180; return [120+200*Math.sin(a)/(111320*Math.cos(Math.PI/6)),30+200*(1-Math.cos(a))/111320,40,ms+i*2000].join(',');}).join('&');}
+function bend(){return Array.from({length:9},(_,i)=>{const a=i*15*Math.PI/180;return [120+40*Math.sin(a)/(111320*Math.cos(Math.PI/6)),30+40*(1-Math.cos(a))/111320,40,ms+i*1000].join(',');}).join('&');}
 const tracks=(trajectory=braking(),id='r1',date='2026.11.12',extra={})=>[{dayTime:date,historyList:[{rideId:id,trajectory,brakesTimes:0,bendingTimes:0,...extra}]}];
 const rec=r=>r.data[0].historyList[0];
 function dayRun(store,date='2026-11-12',options={}){return run('myRideInfo',{rideRecordList:[{date,brakesTimesDay:'0',bendingTimesDay:'0'}],bendingTimesTotal:'0'},{store,...options});}
@@ -154,11 +154,11 @@ test('invalid points, long gaps and reversed timestamps do not bridge into false
  const samples=braking().split('&');
  for(const bad of ['garbage','120,30,,123','0,0,40,123','Infinity,30,40,123']) {
   const t=[...samples.slice(0,3),bad,...samples.slice(5)].join('&');
-  const a=run('ridetrack_v2',tracks(t)); assert.equal(rec(a).brakesTimes,0); assert.equal(a.store.size,0);
+  const a=run('ridetrack_v2',tracks(t)); assert.equal(rec(a).brakesTimes,0); assert.equal(Object.values(JSON.parse(a.store.get(KEY)).scopes)[0]['2026.11.12|r1'].b,null);
  }
  const gap=braking().split('&').map((p,i)=>{const a=p.split(',');a[3]=String(ms+i*30000);return a.join(',');}).join('&');
- assert.equal(run('ridetrack_v2',tracks(gap)).store.size,0);
- const reversed=samples.reverse().join('&');assert.equal(run('ridetrack_v2',tracks(reversed)).store.size,0);
+ assert.equal(Object.values(JSON.parse(run('ridetrack_v2',tracks(gap)).store.get(KEY)).scopes)[0]['2026.11.12|r1'].b,null);
+ const reversed=samples.reverse().join('&');assert.equal(Object.values(JSON.parse(run('ridetrack_v2',tracks(reversed)).store.get(KEY)).scopes)[0]['2026.11.12|r1'].b,null);
 });
 test('malformed JSON, HTTP/business errors, foreign host, endpoint suffix and writes pass through',()=>{
  for(const opts of [{raw:'not json'},{code:401},{status:403},{method:'POST'},{url:'https://evil.example/?x='+root+'ridetrack_v2'},{url:root+'ridetrack_v2evil'}]) {
@@ -179,4 +179,45 @@ test('manual cache tools show summary and clear only this plugin cache',()=>{
  const a=run('ridetrack_v2',tracks());a.store.set('other.plugin','keep');
  function tool(mode){const done=[],notices=[];vm.runInNewContext(tools,{$argument:mode,$persistentStore:{read:k=>a.store.get(k),write:(s,k)=>{a.store.set(k,s);return true;}},$notification:{post:(...x)=>notices.push(x)},console:{log:()=>{}},$done:x=>done.push(x)});assert.equal(done.length,1);return notices[0][2];}
  assert.match(tool('status'),/已缓存行程：1/);tool('clear');assert.equal(a.store.get('other.plugin'),'keep');assert.match(tool('status'),/已缓存行程：0/);
+});
+
+test('sparse braking preserves original cloud value and caches unknown separately',()=>{
+ const a=run('ridetrack_v2',tracks(straight()));
+ assert.equal(rec(a).brakesTimes,0);
+ const db=JSON.parse(a.store.get(KEY));assert.equal(db.version,2);assert.equal(db.algorithm,'2.0.0');assert.equal(Object.values(db.scopes)[0]['2026.11.12|r1'].b,null);
+ assert.equal(dayRun(a.store).data.rideRecordList[0].brakesTimesDay,'0');
+});
+test('unavailable braking field is not created as a fabricated zero',()=>{
+ const data=tracks(straight());delete data[0].historyList[0].brakesTimes;
+ const a=run('ridetrack_v2',data);assert.equal(Object.hasOwn(rec(a),'brakesTimes'),false);
+});
+test('old algorithm cache is replaced once and never mixed with new sums',()=>{
+ const old={version:1,scopes:{'a|TESTVIN12345678901':{'2026.11.12|r1':{id:'r1',day:'2026.11.12',b:99,d:88}}}};
+ const store=new Map([[KEY,JSON.stringify(old)]]);
+ const fresh=run('ridetrack_v2',tracks(),{store});assert.equal(rec(fresh).brakesTimes,1);assert.equal(fresh.writes,1);
+ const again=run('ridetrack_v2',tracks(),{store,forbidEstimation:true});assert.equal(rec(again).brakesTimes,1);assert.equal(again.writes,0);
+ assert.equal(dayRun(store).data.rideRecordList[0].brakesTimesDay,'1');
+});
+test('unknown mixed with known braking does not fabricate a complete daily total',()=>{
+ const a=run('ridetrack_v2',tracks());run('ridetrack_v2',tracks(straight(),'r2'),{store:a.store});
+ assert.equal(dayRun(a.store).data.rideRecordList[0].brakesTimesDay,'0');
+});
+test('new authoritative cloud counts update cache without recomputing the trajectory',()=>{
+ const a=run('ridetrack_v2',tracks());
+ const update=run('ridetrack_v2',tracks(straight(),'r1','2026.11.12',{brakesTimes:9,bendingTimes:3}),{store:a.store,forbidEstimation:true});
+ assert.equal(rec(update).brakesTimes,9);assert.equal(update.writes,1);assert.equal(dayRun(a.store).data.rideRecordList[0].brakesTimesDay,'9');
+});
+test('status distinguishes unknown sampling and expired cache',()=>{
+ const a=run('ridetrack_v2',tracks(straight()));
+ function status(store){const logs=[];vm.runInNewContext(tools,{$persistentStore:{read:k=>store.get(k)},console:{log:x=>logs.push(x)},$done:()=>{}});return logs.join('');}
+ assert.match(status(a.store),/急刹采样不足：1 条/);
+ assert.match(status(new Map([[KEY,JSON.stringify({version:1,scopes:{}})]])),/旧算法缓存已过期/);
+});
+test('available bend estimates can contribute without treating unavailable geometry as zero',()=>{
+ const a=run('ridetrack_v2',tracks(bend()));
+ const unmoving=Array.from({length:6},(_,i)=>[120,30,0,ms+i*10000].join(',')).join('&');
+ run('ridetrack_v2',tracks(unmoving,'r2'),{store:a.store});
+ const db=JSON.parse(a.store.get(KEY));assert.equal(Object.values(db.scopes)[0]['2026.11.12|r2'].d,null);
+ assert.equal(Number(dayRun(a.store).data.rideRecordList[0].bendingTimesDay),rec(a).bendingTimes);
+ assert.equal(Number(run('analyse/analyse',{rideMonth:'202611',bendingTimes:'0'},{store:a.store}).data.bendingTimes),rec(a).bendingTimes);
 });
