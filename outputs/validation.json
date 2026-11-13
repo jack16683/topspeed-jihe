@@ -1,25 +1,25 @@
 {
   "format": "plain-plugin",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "jack16683",
   "plugin": {
     "path": "loon/极速鸡盒.plugin",
-    "url": "https://raw.githubusercontent.com/jack16683/topspeed-jihe/main/loon/%E6%9E%81%E9%80%9F%E9%B8%A1%E7%9B%92.plugin?v=2.0.0",
-    "sha256": "3b1dd374430fb4d54c8e0704eee28be1ac4df42f6e02452b9cf56cacc6a39f70"
+    "url": "https://raw.githubusercontent.com/jack16683/topspeed-jihe/main/loon/%E6%9E%81%E9%80%9F%E9%B8%A1%E7%9B%92.plugin?v=2.1.0",
+    "sha256": "cfaf016af9cbf342805dcc63d0b40ca4df15ed0161a5dd86a66be80d8efd8cbb"
   },
   "remoteScripts": [
     {
-      "url": "https://raw.githubusercontent.com/jack16683/topspeed-jihe/v2.0.0/loon/scripts/ride-fill.js",
+      "url": "https://raw.githubusercontent.com/jack16683/topspeed-jihe/v2.1.0/loon/scripts/ride-fill.js",
       "path": "loon/scripts/ride-fill.js",
-      "sha256": "9673b7a4d94a0c0d152c46b7ee2805f43ab1bbf544aa8676910ab76ec7cc2dc8"
+      "sha256": "55460a9148ec880d00d69d33b8334dc43ef3ba414c7800c348b0f87224ddd67f"
     },
     {
-      "url": "https://raw.githubusercontent.com/jack16683/topspeed-jihe/v2.0.0/loon/scripts/cache-tools.js",
+      "url": "https://raw.githubusercontent.com/jack16683/topspeed-jihe/v2.1.0/loon/scripts/cache-tools.js",
       "path": "loon/scripts/cache-tools.js",
-      "sha256": "5dfe550c6583ed6a19600137e66367bb02a181ef57497d76e8bc83145172f5e8"
+      "sha256": "003c6bc57534d17c36d4586b073f81b6d95dfd159fef1040bad606b8e4d67a6d"
     }
   ],
-  "offlineTests": 51,
+  "offlineTests": 62,
   "cachePolicy": "algorithm-versioned; reuse known, zero and unknown; recompute old-version rides once",
   "deviceValidated": false
 }

@@ -9,8 +9,19 @@
   else root.JiheRideEngine=factory();
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
 'use strict';
-var VERSION='2.0.0',G=9.80665,DEG=Math.PI/180;
-var C={gapCadences:2.5,gapMin:5,gapMax:60,anchorMeters:20,turnAngle:30,noiseMeters:8,reversalAngle:12,quietAngle:4,quietMeters:90,turnMinSpeed:10,leanDegrees:10,brakeG:.3,brakeDuration:.6,brakeSampleMax:.25};
+var VERSION='2.1.0',G=9.80665,DEG=Math.PI/180;
+var C={gapCadences:2.5,gapMin:5,gapMax:60,anchorMeters:20,turnAngle:30,noiseMeters:8,reversalAngle:12,quietAngle:4,quietMeters:90,turnMinSpeed:10,leanDegrees:5,brakeG:.3,brakeDuration:.6,brakeSampleMax:.25};
+function profile(options){options=options||{};var b=options.brakeMode==='云端近似'||options.brakeMode==='cloud-like'?'cloud-like':'strict',d=options.bendMode==='保守估算'||options.bendMode==='conservative'?'conservative':'daily';return {brakeMode:b,bendMode:d,leanDegrees:d==='conservative'?10:5,key:b+'-'+d};}
+function cloudCounter(prepared,cadence,parsed){
+ // Count fit to historical provider counters. This is not a physical 0.3 G detector.
+ if(parsed.invalid||parsed.points<4||cadence<5||cadence>20)return null;
+ var n=0;
+ for(var j=0;j<prepared.runs.length;j++)for(var i=1;i<prepared.runs[j].length;i++){
+  var a=prepared.runs[j][i-1],b=prepared.runs[j][i],dt=(b.t-a.t)/1000,dv=a.v-b.v,g=dv/3.6/dt/G;
+  if(a.v>=10&&dv+1e-9>=5&&g+1e-9>=.02)n++;
+ }
+ return Math.round(n*.875);
+}
 function finite(v){return typeof v==='number'&&isFinite(v);}
 function number(v){return v===null||v===undefined||String(v).trim()===''?NaN:Number(v);}
 function timestamp(v){var t=number(v);return t>=100000000&&t<100000000000?t*1000:t;}
@@ -71,7 +82,7 @@ function strength(a,i){
  var curvature=2*Math.abs(x*Y-y*X)/product,lateralG=Math.pow(q.v/3.6,2)*curvature/G;
  return {speed:q.v,degrees:Math.atan(lateralG)/DEG};
 }
-function bendReview(pts){
+function bendReview(pts,pref){
  var a=anchors(pts),cur=null,events=[],geometry=a.length>=3;
  function flush(){if(cur&&cur.peak>=cur.required&&cur.speed>=5)events.push(cur.marker);cur=null;}
  for(var i=1;i<a.length-1;i++){
@@ -90,21 +101,24 @@ function bendReview(pts){
   else if(cur.peak>=cur.required&&a[i].path-cur.lastProgress>=C.quietMeters)flush();
  }
  flush();var count=0;
- for(var k=0;k<events.length;k++){var s=strength(a,events[k]);if(s&&s.speed>=C.turnMinSpeed&&s.degrees>=C.leanDegrees)count++;}
+ for(var k=0;k<events.length;k++){var s=strength(a,events[k]);if(s&&s.speed>=C.turnMinSpeed&&s.degrees>=pref.leanDegrees)count++;}
  return {count:count,geometry:geometry,turns:events.length};
 }
-function analyze(trajectory){
+function analyze(trajectory,options){
+ var pref=profile(options);
  var parsed=parse(trajectory),t=timing(parsed.runs),prepared=prepare(parsed,t),b=brakeReview(prepared),count=0,geometry=false,turns=0;
- for(var i=0;i<prepared.runs.length;i++){var d=bendReview(prepared.runs[i]);count+=d.count;geometry=geometry||d.geometry;turns+=d.turns;}
- return {version:VERSION,points:parsed.points,brakes:b.count,bends:geometry?count:null,quality:{brake:b.status,bend:geometry?'model':'insufficient',cadenceSeconds:t.cadence,gaps:prepared.gaps,invalidPoints:parsed.invalid,turnCandidates:turns,maxAverageBrakeG:b.maxAverageG}};
+ for(var i=0;i<prepared.runs.length;i++){var d=bendReview(prepared.runs[i],pref);count+=d.count;geometry=geometry||d.geometry;turns+=d.turns;}
+ if(pref.brakeMode==='cloud-like'&&b.count===null){b.count=cloudCounter(prepared,t.cadence,parsed);b.status=b.count===null?'calibration-unavailable':'cloud-like';}
+ return {version:VERSION,profile:pref.key,points:parsed.points,brakes:b.count,bends:geometry?count:null,quality:{brake:b.status,bend:geometry?'model':'insufficient',cadenceSeconds:t.cadence,gaps:prepared.gaps,invalidPoints:parsed.invalid,turnCandidates:turns,maxAverageBrakeG:b.maxAverageG}};
 }
-return {version:VERSION,criteria:C,analyze:analyze};
+return {version:VERSION,criteria:C,profile:profile,analyze:analyze};
 });
 
 /* SPDX-License-Identifier: AGPL-3.0-only */
 (function () {
 'use strict';
 var E=JiheRideEngine, own=function(o,k){return Object.prototype.hasOwnProperty.call(o,k);};
+var P=E.profile(typeof $argument==='object'&&$argument?$argument:{});
 var KEY='zeeho.ridefill.v1',MAX_RIDES=2000,MAX_CHARS=900000;
 function log(s){console.log('[极速鸡盒] '+s);}
 function missing(v){return v===undefined||v===null||v===''||v===0||v==='0';}
@@ -135,7 +149,7 @@ function load() {
     var s=$persistentStore.read(KEY), o=s && JSON.parse(s);
     if(o && o.version===2 && o.algorithm===E.version && o.scopes && typeof o.scopes==='object' && !Array.isArray(o.scopes)) return o;
   } catch(e) { log('缓存不可读，本次从空缓存开始'); }
-  return {version:2,algorithm:E.version,scopes:{}};
+  return {version:2,algorithm:E.version,lastProfile:P.key,scopes:{}};
 }
 function save(db) {
   var s=JSON.stringify(db), count=0;
@@ -205,7 +219,9 @@ function main() {
     var gated=JSON.stringify(obj); return gated===original ? {} : {body:gated};
   }
   var q=query(url), scope=identity(req,q,data), db=load();
-  var rides=scope && own(db.scopes,scope) ? db.scopes[scope] : {};
+  var scoped=scope?P.key+'|'+scope:'';
+  var rides=scoped && own(db.scopes,scoped) ? db.scopes[scoped] : {};
+  var metaChanged=!!scope&&db.lastProfile!==P.key;
   var dirty=false, computed=0, reused=0,changes={dirty:false};
   if(type==='ridetrack_v2' && Array.isArray(data)) {
     data.forEach(function(group) {
@@ -214,7 +230,7 @@ function main() {
         if(!r || typeof r!=='object') return;
         // Reuse even zero estimates before parsing or scanning the trajectory.
         if(cachedRide(r,rides,group.dayTime,changes)) { reused++; return; }
-        var result=E.analyze(r.trajectory);
+        var result=E.analyze(r.trajectory,P);
         if(result.points<4) return;
         fill(r,'brakesTimes',result.brakes);fill(r,'bendingTimes',result.bends);computed++;
         var ds=day(r.dayTime || group.dayTime), id=r.rideId || r.id || r.recordId;
@@ -224,7 +240,7 @@ function main() {
         dirty=true;
       });
     });
-    if(dirty||changes.dirty) { db.scopes[scope]=rides; save(db); }
+    if(dirty||changes.dirty||metaChanged) { db.scopes[scoped]=rides;db.lastProfile=P.key;save(db); }
     log('已计算 '+computed+' 条行程；复用缓存 '+reused+' 条'+(!scope ? '；缺少车辆标识，未缓存' : ''));
   } else if(type==='myRideInfo') {
     if(Array.isArray(data.rideRecordList)) data.rideRecordList.forEach(function(r) {
@@ -244,6 +260,7 @@ function main() {
       }
     }
   }
+  if(type!=='ridetrack_v2'&&metaChanged){db.lastProfile=P.key;save(db);}
   var body=JSON.stringify(obj); return body===original ? {} : {body:body};
 }
 var result={};

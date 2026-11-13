@@ -2,6 +2,7 @@
 (function () {
 'use strict';
 var E=JiheRideEngine, own=function(o,k){return Object.prototype.hasOwnProperty.call(o,k);};
+var P=E.profile(typeof $argument==='object'&&$argument?$argument:{});
 var KEY='zeeho.ridefill.v1',MAX_RIDES=2000,MAX_CHARS=900000;
 function log(s){console.log('[极速鸡盒] '+s);}
 function missing(v){return v===undefined||v===null||v===''||v===0||v==='0';}
@@ -32,7 +33,7 @@ function load() {
     var s=$persistentStore.read(KEY), o=s && JSON.parse(s);
     if(o && o.version===2 && o.algorithm===E.version && o.scopes && typeof o.scopes==='object' && !Array.isArray(o.scopes)) return o;
   } catch(e) { log('缓存不可读，本次从空缓存开始'); }
-  return {version:2,algorithm:E.version,scopes:{}};
+  return {version:2,algorithm:E.version,lastProfile:P.key,scopes:{}};
 }
 function save(db) {
   var s=JSON.stringify(db), count=0;
@@ -102,7 +103,9 @@ function main() {
     var gated=JSON.stringify(obj); return gated===original ? {} : {body:gated};
   }
   var q=query(url), scope=identity(req,q,data), db=load();
-  var rides=scope && own(db.scopes,scope) ? db.scopes[scope] : {};
+  var scoped=scope?P.key+'|'+scope:'';
+  var rides=scoped && own(db.scopes,scoped) ? db.scopes[scoped] : {};
+  var metaChanged=!!scope&&db.lastProfile!==P.key;
   var dirty=false, computed=0, reused=0,changes={dirty:false};
   if(type==='ridetrack_v2' && Array.isArray(data)) {
     data.forEach(function(group) {
@@ -111,7 +114,7 @@ function main() {
         if(!r || typeof r!=='object') return;
         // Reuse even zero estimates before parsing or scanning the trajectory.
         if(cachedRide(r,rides,group.dayTime,changes)) { reused++; return; }
-        var result=E.analyze(r.trajectory);
+        var result=E.analyze(r.trajectory,P);
         if(result.points<4) return;
         fill(r,'brakesTimes',result.brakes);fill(r,'bendingTimes',result.bends);computed++;
         var ds=day(r.dayTime || group.dayTime), id=r.rideId || r.id || r.recordId;
@@ -121,7 +124,7 @@ function main() {
         dirty=true;
       });
     });
-    if(dirty||changes.dirty) { db.scopes[scope]=rides; save(db); }
+    if(dirty||changes.dirty||metaChanged) { db.scopes[scoped]=rides;db.lastProfile=P.key;save(db); }
     log('已计算 '+computed+' 条行程；复用缓存 '+reused+' 条'+(!scope ? '；缺少车辆标识，未缓存' : ''));
   } else if(type==='myRideInfo') {
     if(Array.isArray(data.rideRecordList)) data.rideRecordList.forEach(function(r) {
@@ -141,6 +144,7 @@ function main() {
       }
     }
   }
+  if(type!=='ridetrack_v2'&&metaChanged){db.lastProfile=P.key;save(db);}
   var body=JSON.stringify(obj); return body===original ? {} : {body:body};
 }
 var result={};

@@ -7,13 +7,13 @@ const tools=fs.readFileSync(new URL('../scripts/cache-tools.js',import.meta.url)
 const plugin=fs.readFileSync(new URL('../极速鸡盒.plugin',import.meta.url),'utf8');
 const root='https://tapi.zeehoev.com/v1.0/app/cfmotoserverapp/';
 const KEY='zeeho.ridefill.v1';
-function run(endpoint,data,{store=new Map(),vin='TESTVIN12345678901',uid='a',raw,method='GET',code=10000,failWrite=false,status=200,url,headers={},forbidEstimation=false}={}) {
+function run(endpoint,data,{store=new Map(),vin='TESTVIN12345678901',uid='a',raw,method='GET',code=10000,failWrite=false,status=200,url,headers={},forbidEstimation=false,argument}={}) {
   const body=raw??JSON.stringify({code,data}), done=[], logs=[];
   var writes=0;
   const request={url:url??root+endpoint+'?vinNo='+vin,method,headers:{user_id:uid,...headers}};
   const response={status,body};
   const before=JSON.stringify({request,response});
-  const ctx={$request:request,$response:response,$persistentStore:{read:k=>store.get(k),write:(s,k)=>{writes++;if(failWrite)return false;store.set(k,s);return true;}},$done:x=>done.push(x),console:{log:x=>logs.push(x)}};
+  const ctx={$argument:argument,$request:request,$response:response,$persistentStore:{read:k=>store.get(k),write:(s,k)=>{writes++;if(failWrite)return false;store.set(k,s);return true;}},$done:x=>done.push(x),console:{log:x=>logs.push(x)}};
   if(forbidEstimation) ctx.Math=new Proxy(Math,{get(target,key){
     if(['sin','cos','atan2','sqrt','round'].includes(key)) return ()=>{throw new Error('Cached ride must not run estimators');};
     return target[key];
@@ -184,7 +184,7 @@ test('manual cache tools show summary and clear only this plugin cache',()=>{
 test('sparse braking preserves original cloud value and caches unknown separately',()=>{
  const a=run('ridetrack_v2',tracks(straight()));
  assert.equal(rec(a).brakesTimes,0);
- const db=JSON.parse(a.store.get(KEY));assert.equal(db.version,2);assert.equal(db.algorithm,'2.0.0');assert.equal(Object.values(db.scopes)[0]['2026.11.12|r1'].b,null);
+ const db=JSON.parse(a.store.get(KEY));assert.equal(db.version,2);assert.equal(db.algorithm,'2.1.0');assert.equal(Object.values(db.scopes)[0]['2026.11.12|r1'].b,null);
  assert.equal(dayRun(a.store).data.rideRecordList[0].brakesTimesDay,'0');
 });
 test('unavailable braking field is not created as a fabricated zero',()=>{
@@ -220,4 +220,35 @@ test('available bend estimates can contribute without treating unavailable geome
  const db=JSON.parse(a.store.get(KEY));assert.equal(Object.values(db.scopes)[0]['2026.11.12|r2'].d,null);
  assert.equal(Number(dayRun(a.store).data.rideRecordList[0].bendingTimesDay),rec(a).bendingTimes);
  assert.equal(Number(run('analyse/analyse',{rideMonth:'202611',bendingTimes:'0'},{store:a.store}).data.bendingTimes),rec(a).bendingTimes);
+});
+test('different profiles keep separate reusable caches',()=>{
+ const trajectory=[60,60,45,30,0,0].map((v,i)=>[120+i*.0002,30,v,ms+i*10000].join(',')).join('&');
+ const strict=run('ridetrack_v2',tracks(trajectory));assert.equal(rec(strict).brakesTimes,0);
+ const compatible=run('ridetrack_v2',tracks(trajectory),{store:strict.store,argument:{brakeMode:'云端近似'}});assert.equal(rec(compatible).brakesTimes,3);
+ const again=run('ridetrack_v2',tracks(trajectory),{store:strict.store,argument:{brakeMode:'云端近似'},forbidEstimation:true});assert.equal(rec(again).brakesTimes,3);assert.equal(again.writes,0);
+ const back=run('ridetrack_v2',tracks(trajectory),{store:strict.store,forbidEstimation:true});assert.equal(rec(back).brakesTimes,0);assert.ok(back.logs.some(s=>s.includes('复用缓存 1 条')));
+ const db=JSON.parse(strict.store.get(KEY));assert.equal(Object.keys(db.scopes).length,2);
+});
+test('day and month backfill use only the selected profile',()=>{
+ const trajectory=[60,60,45,30,0,0].map((v,i)=>[120+i*.0002,30,v,ms+i*10000].join(',')).join('&');
+ const a=run('ridetrack_v2',tracks(trajectory),{argument:{brakeMode:'云端近似'}});
+ assert.equal(dayRun(a.store).data.rideRecordList[0].brakesTimesDay,'0');
+ assert.equal(dayRun(a.store,'2026.11.12',{argument:{brakeMode:'云端近似'}}).data.rideRecordList[0].brakesTimesDay,'3');
+});
+test('cloud nonzero takes precedence even in proxy mode',()=>{
+ const a=run('ridetrack_v2',tracks(straight(),'r1','2026.11.12',{brakesTimes:'9'}),{argument:{brakeMode:'云端近似'}});assert.equal(rec(a).brakesTimes,'9');
+});
+test('cache clear also recovers from corrupted JSON',()=>{
+ const store=new Map([[KEY,'bad json']]);vm.runInNewContext(tools,{$argument:'clear',$persistentStore:{read:k=>store.get(k),write:(v,k)=>{store.set(k,v);return true;}},console:{log:()=>{}},$done:()=>{}});
+ assert.equal(JSON.parse(store.get(KEY)).algorithm,'2.1.0');assert.equal(Object.keys(JSON.parse(store.get(KEY)).scopes).length,0);
+});
+test('published manifest exposes the selected profile arguments',()=>{
+ assert.match(plugin,/brakeMode = select,"严格G","云端近似"/);
+ assert.match(plugin,/bendMode = select,"日常估算","保守估算"/);
+ assert.match(plugin,/ride-fill\.js", \{\$\{brakeMode\}, \$\{bendMode\}\}/);
+});
+test('status distinguishes sparse local sampling from retained cloud counts',()=>{
+ const a=run('ridetrack_v2',tracks(straight(),'r1','2026.11.12',{brakesTimes:9})),logs=[];
+ vm.runInNewContext(tools,{$persistentStore:{read:k=>a.store.get(k)},console:{log:s=>logs.push(s)},$done:()=>{}});
+ assert.match(logs.join(''),/急刹采样不足：1 条/);assert.match(logs.join(''),/最终急刹未知：0 条/);
 });

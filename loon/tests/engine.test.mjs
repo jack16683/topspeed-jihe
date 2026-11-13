@@ -7,7 +7,7 @@ function line(speed,duration,dt){const rows=[];for(let i=0;i<=Math.round(duratio
 const wire=a=>a.map(r=>r.join(',')).join('&');
 function circle(radius,speed=40,total=180){return Array.from({length:Math.floor(total/10)+1},(_,i)=>{const a=i*10*Math.PI/180,t=radius*a/(speed/3.6);return [120+radius*Math.sin(a)/(111320*Math.cos(Math.PI/6)),30+radius*(1-Math.cos(a))/111320,speed,ms+Math.round(t*1000)];});}
 function straight(dt=10){return Array.from({length:15},(_,i)=>[120+i*.0002,30,40,ms+i*dt*1000]);}
-test('release and fixed published criteria',()=>{assert.equal(E.version,'2.0.0');assert.equal(E.criteria.brakeG,.3);assert.equal(E.criteria.leanDegrees,10);assert.equal(E.criteria.turnMinSpeed,10);});
+test('release and fixed published criteria',()=>{assert.equal(E.version,'2.1.0');assert.equal(E.criteria.brakeG,.3);assert.equal(E.criteria.leanDegrees,5);assert.equal(E.criteria.turnMinSpeed,10);});
 test('high-frequency strong deceleration counts once',()=>{const r=E.analyze(wire(line(60,3,.2)));assert.equal(r.brakes,1);assert.equal(r.quality.brake,'estimated');});
 test('slow braking is not harsh even with large speed loss',()=>assert.equal(E.analyze(wire(line(60,10,.2))).brakes,0));
 test('exact threshold withstands floating point representation',()=>{const a=line(.3*G*3.6*2,2,.2);assert.equal(E.analyze(wire(a)).brakes,1);});
@@ -28,3 +28,22 @@ test('teleports are not turns',()=>{const a=straight();a[6][1]+=1;const r=E.anal
 test('bad samples never bridge a braking or turning event',()=>{const a=line(60,3,.2);const s=wire(a.slice(0,5))+'&bad&'+wire(a.slice(6));const r=E.analyze(s);assert.equal(r.brakes,null);assert.equal(r.quality.invalidPoints,1);});
 test('empty, invalid and excessive input stay unavailable',()=>{for(const s of [null,'bad','0,0,40,123',Array(50002).fill('1,1,1,1').join('&')]){const r=E.analyze(s);assert.equal(r.brakes,null);assert.equal(r.bends,null);}});
 test('second and millisecond timestamps agree',()=>{const a=circle(40),s=a.map(p=>[...p.slice(0,3),p[3]/1000]);assert.equal(E.analyze(wire(a)).bends,E.analyze(wire(s)).bends);});
+test('profiles are explicit: strict G is default and daily model is less conservative',()=>{
+ assert.equal(E.profile({}).key,'strict-daily');
+ assert.equal(E.profile({brakeMode:'云端近似',bendMode:'保守估算'}).key,'cloud-like-conservative');
+ assert.equal(E.profile({brakeMode:'unknown'}).brakeMode,'strict');
+});
+test('historical count proxy is opt-in and distinct from G detection',()=>{
+ const a=[60,60,45,30,0,0].map((v,i)=>[120+i*.0002,30,v,ms+i*10000]);
+ assert.equal(E.analyze(wire(a)).brakes,null);
+ const r=E.analyze(wire(a),{brakeMode:'cloud-like'});assert.equal(r.brakes,3);assert.equal(r.quality.brake,'cloud-like');
+});
+test('compatibility mode uses strict result when sample resolution supports it',()=>{
+ const r=E.analyze(wire(line(60,3,.2)),{brakeMode:'cloud-like'});assert.equal(r.brakes,1);assert.equal(r.quality.brake,'estimated');
+});
+test('count proxy is unavailable outside its calibration cadence',()=>{
+ const r=E.analyze(wire(straight(2)),{brakeMode:'cloud-like'});assert.equal(r.brakes,null);assert.equal(r.quality.brake,'calibration-unavailable');
+});
+test('daily and conservative models differ without changing the trajectory',()=>{
+ const s=wire(circle(80));assert.equal(E.analyze(s).bends,1);assert.equal(E.analyze(s,{bendMode:'conservative'}).bends,0);
+});

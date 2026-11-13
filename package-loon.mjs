@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import {spawnSync} from 'node:child_process';
 import './build-loon.mjs';
-const version='2.0.0',entry='loon/极速鸡盒.plugin';
+const version='2.1.0',entry='loon/极速鸡盒.plugin';
 const base='https://raw.githubusercontent.com/jack16683/topspeed-jihe/';
 const runtime=base+'v'+version+'/';
 const source=fs.readFileSync(entry,'utf8');
