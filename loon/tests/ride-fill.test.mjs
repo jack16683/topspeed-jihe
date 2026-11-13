@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync(new URL('../scripts/ride-fill.js',import.meta.url),'utf8');
 const tools=fs.readFileSync(new URL('../scripts/cache-tools.js',import.meta.url),'utf8');
+const plugin=fs.readFileSync(new URL('../极速鸡盒.plugin',import.meta.url),'utf8');
 const root='https://tapi.zeehoev.com/v1.0/app/cfmotoserverapp/';
 const KEY='zeeho.ridefill.v1';
 function run(endpoint,data,{store=new Map(),vin='TESTVIN12345678901',uid='a',raw,method='GET',code=10000,failWrite=false,status=200,url,headers={},forbidEstimation=false}={}) {
@@ -35,6 +36,26 @@ test('gate preserves vehicleType, only patches named display fields',()=>{
  const r=run('vehicleHomePageV2',{vehicleKinds:4,vehicleType:'AE5i',cyclingEventStatisticFlag:false});
  assert.deepEqual(r.data,{vehicleKinds:2,vehicleType:'AE5i',cyclingEventStatisticFlag:true});
  assert.equal(r.store.size,0);
+});
+test('vehicle home page with VIN in path rewrites vehicle kinds and event gate',()=>{
+ for(const suffix of ['/TESTVIN12345678901?uniqueIdentify=test','/TESTVIN12345678901']) {
+  const r=run('vehicleHomePageV2',{vehicleKinds:4,vehicleType:'MODEL',cyclingEventStatisticFlag:false},{url:root+'vehicleHomePageV2'+suffix});
+  assert.deepEqual(r.data,{vehicleKinds:2,vehicleType:'MODEL',cyclingEventStatisticFlag:true});
+  assert.equal(r.store.size,0);
+ }
+});
+test('vehicle list rewrites display type for each vehicle without changing model fields',()=>{
+ const r=run('vehicle/list',[{vehicleKinds:4,vehicleType:'MODEL_A',cyclingEventStatisticFlag:false},{vehicleKinds:'4',vehicleType:'MODEL_B',cyclingEventStatisticFlag:false}]);
+ assert.deepEqual(r.data,[{vehicleKinds:2,vehicleType:'MODEL_A',cyclingEventStatisticFlag:true},{vehicleKinds:2,vehicleType:'MODEL_B',cyclingEventStatisticFlag:true}]);
+ assert.equal(r.store.size,0);
+});
+test('published plugin routes actual home paths and vehicle lists to the display rewrite',()=>{
+ const guard=vm.runInNewContext(plugin.match(/response if \$\{url\} ~= (\/.*\/) then script/)[1]);
+ for(const endpoint of ['vehicleHomePageV2','vehicleHomePageV2/TESTVIN12345678901','vehicle/list','ridetrack_v2','myRideInfo','homeRideInfo','analyse/analyse']) {
+  assert.ok(guard.test(root+endpoint+'?test=1'),endpoint);
+ }
+ assert.equal(guard.test(root+'vehicleHomePageV2evil?test=1'),false);
+ assert.equal(guard.test('https://evil.example/'+root+'vehicleHomePageV2/TESTVIN12345678901'),false);
 });
 test('brake estimate survives separate invocations and repeated opening never adds twice',()=>{
  const a=run('ridetrack_v2',tracks()); assert.ok(rec(a).brakesTimes>0); const count=rec(a).brakesTimes;

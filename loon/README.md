@@ -16,7 +16,7 @@ Loon 每个响应阶段只选中一条 Response Script；匹配同一 URL 的旧
 
 | 接口 | 行为 |
 |---|---|
-| `vehicleHomePageV2` / `vehicle/list` | 调整上述两个显示字段，保留 `vehicleType` 等其他字段 |
+| `vehicleHomePageV2`、`vehicleHomePageV2/<车辆编号>` / `vehicle/list` | 将 `vehicleKinds` 改为 `2`，`cyclingEventStatisticFlag` 改为 `true`；覆盖首页与车辆列表，保留 `vehicleType` 等其他字段 |
 | `ridetrack_v2` | 已缓存行程直接回填；未缓存时解析 `data[].historyList[].trajectory`，为缺失/0 的急刹、压弯字段计算估算值 |
 | `myRideInfo` | 按 `rideRecordList[].date` 补全缺失/0 的 `brakesTimesDay`、`bendingTimesDay` |
 | `analyse/analyse` | 按 `rideMonth` 汇总已缓存行程，补全缺失/0 的 `brakesTimes`、`bendingTimes` |
@@ -46,6 +46,6 @@ Loon 每个响应阶段只选中一条 Response Script；匹配同一 URL 的旧
 node --test loon/tests/ride-fill.test.mjs
 ```
 
-16 项离线模拟测试覆盖急刹/转弯/直线、跨请求缓存、非零与零结果命中后跳过计算和写入、新旧行程混合回填、清空后重新计算、车辆/账号隔离、云端值优先、日期与时间戳、异常轨迹、错误响应、存储失败和手动缓存操作。**未执行真实账号 API、真实轨迹或 iPhone/Loon 运行测试。** 发布检查验证明文插件的作者、远程脚本地址和文件哈希，不能替代手机导入验证。
+19 项离线模拟测试覆盖带车辆编号的首页路径、车辆列表车型改写、插件实际路由、急刹/转弯/直线、跨请求缓存、非零与零结果命中后跳过计算和写入、新旧行程混合回填、清空后重新计算、车辆/账号隔离、云端值优先、日期与时间戳、异常轨迹、错误响应、存储失败和手动缓存操作。**未执行真实账号 API、真实轨迹或 iPhone/Loon 运行测试。** 发布检查验证明文插件的作者、远程脚本地址和文件哈希，不能替代手机导入验证。
 
 插件和脚本均为明文，可在 GitHub 直接查看。首次安装与更新脚本时需要能访问 GitHub 原始文件域名。替换旧插件时保留 Loon 本地存储，已有计算缓存继续复用。

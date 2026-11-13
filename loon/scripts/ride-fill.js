@@ -261,7 +261,7 @@ function main() {
   var req=typeof $request==='undefined' ? {} : $request;
   var res=typeof $response==='undefined' ? {} : $response;
   var url=req.url || '';
-  var match=/^https:\/\/tapi\.zeehoev\.com\/v1\.0\/app\/cfmotoserverapp\/(?:[^/?#]+\/)*(vehicleHomePageV2|vehicle\/list|ridetrack_v2|myRideInfo|homeRideInfo|analyse)(?:\?|$)/.exec(url);
+  var match=/^https:\/\/tapi\.zeehoev\.com\/v1\.0\/app\/cfmotoserverapp\/(?:[^/?#]+\/)*(vehicleHomePageV2(?:\/[^/?#]+)?|vehicle\/list|ridetrack_v2|myRideInfo|homeRideInfo|analyse)(?:\?|$)/.exec(url);
   if(!match || (req.method && String(req.method).toUpperCase()!=='GET')) return {};
   var status=String(res.statusCode || res.status || '200');
   if(!/^(200|HTTP\/\S+ 200(?:\s.*)?)$/.test(status)) return {};
@@ -270,6 +270,7 @@ function main() {
   if(!obj || typeof obj!=='object' || (obj.code!==undefined && String(obj.code)!=='10000')) return {};
   var original=JSON.stringify(obj);
   var data=obj.data, type=match[1]; if(!data || typeof data!=='object') return {};
+  if(type.indexOf('vehicleHomePageV2/')===0) type='vehicleHomePageV2';
   if(type==='vehicleHomePageV2' || type==='vehicle/list') {
     gate(data,0); var gated=JSON.stringify(obj); return gated===original ? {} : {body:gated};
   }
