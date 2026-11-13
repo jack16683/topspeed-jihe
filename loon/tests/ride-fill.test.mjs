@@ -49,6 +49,32 @@ test('vehicle list rewrites display type for each vehicle without changing model
  assert.deepEqual(r.data,[{vehicleKinds:2,vehicleType:'MODEL_A',cyclingEventStatisticFlag:true},{vehicleKinds:2,vehicleType:'MODEL_B',cyclingEventStatisticFlag:true}]);
  assert.equal(r.store.size,0);
 });
+test('only confirmed vehicleKinds values are rewritten and absent fields stay absent',()=>{
+ const input=[1,4,'1','4',null,2,'2',0,3,5,'',false,true].map(vehicleKinds=>({vehicleKinds}));
+ input.push({other:'keep'});
+ const r=run('vehicle/list',input);
+ assert.deepEqual(r.data.slice(0,5),Array.from({length:5},()=>({vehicleKinds:2})));
+ assert.deepEqual(r.data.slice(5),input.slice(5));
+ assert.ok(r.data.every(v=>!Object.hasOwn(v,'cyclingEventStatisticFlag')));
+});
+test('daily records recursively unlock null display fields while preserving server statistics',()=>{
+ const daily={date:'2026.11.12',vehicleKinds:null,cyclingEventStatisticFlag:null,maxSpeed:52,accelerationTimesDay:'8',brakesTimesDay:'0',bendingTimesDay:'0',vehicleType:'MODEL'};
+ const r=run('myRideInfo',{rideRecordList:[daily]},{code:'10000'});
+ assert.deepEqual(r.data,{rideRecordList:[{...daily,vehicleKinds:2,cyclingEventStatisticFlag:true}]});
+ assert.equal(r.writes,0);
+});
+test('historical ride display flags are rewritten while trajectory and speed stay unchanged',()=>{
+ const data=tracks(straight(),'r1','2026.11.12',{vehicleKinds:null,cyclingEventStatisticFlag:null,maxSpeed:52,vehicleType:'MODEL'});
+ const original=data[0].historyList[0];
+ const r=run('ridetrack_v2',data);
+ assert.deepEqual(rec(r),{...original,vehicleKinds:2,cyclingEventStatisticFlag:true});
+ assert.equal(r.writes,1);
+});
+test('responses without explicit successful business code are not rewritten',()=>{
+ const data={vehicleKinds:4,cyclingEventStatisticFlag:false};
+ const r=run('vehicleHomePageV2',data,{raw:JSON.stringify({data})});
+ assert.deepEqual(Object.keys(r.patch),[]);assert.equal(r.writes,0);
+});
 test('published plugin routes actual home paths and vehicle lists to the display rewrite',()=>{
  const guard=vm.runInNewContext(plugin.match(/response if \$\{url\} ~= (\/.*\/) then script/)[1]);
  for(const endpoint of ['vehicleHomePageV2','vehicleHomePageV2/TESTVIN12345678901','vehicle/list','ridetrack_v2','myRideInfo','homeRideInfo','analyse/analyse']) {

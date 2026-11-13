@@ -16,11 +16,13 @@ Loon 每个响应阶段只选中一条 Response Script；匹配同一 URL 的旧
 
 | 接口 | 行为 |
 |---|---|
-| `vehicleHomePageV2`、`vehicleHomePageV2/<车辆编号>` / `vehicle/list` | 将 `vehicleKinds` 改为 `2`，`cyclingEventStatisticFlag` 改为 `true`；覆盖首页与车辆列表，保留 `vehicleType` 等其他字段 |
+| `vehicleHomePageV2`、`vehicleHomePageV2/<车辆编号>` / `vehicle/list` | 递归处理下述显示字段，覆盖首页与车辆列表 |
 | `ridetrack_v2` | 已缓存行程直接回填；未缓存时解析 `data[].historyList[].trajectory`，为缺失/0 的急刹、压弯字段计算估算值 |
-| `myRideInfo` | 按 `rideRecordList[].date` 补全缺失/0 的 `brakesTimesDay`、`bendingTimesDay` |
+| `myRideInfo` | 递归处理显示字段，再按 `rideRecordList[].date` 补全缺失/0 的 `brakesTimesDay`、`bendingTimesDay` |
 | `analyse/analyse` | 按 `rideMonth` 汇总已缓存行程，补全缺失/0 的 `brakesTimes`、`bendingTimes` |
 | `homeRideInfo` | 仅在响应含明确匹配的行程 ID，或明确日期且已有日统计字段时补全；实际 App 的这一响应结构仍待手机验证 |
+
+对上述首页、车辆列表、`myRideInfo` 和 `ridetrack_v2` 四类接口，仅在 HTTP 200 且业务码为数字或字符串 `10000` 时，在 `data` 内递归处理已有的显示字段：`vehicleKinds` 为 `1`、`4`、`"1"`、`"4"` 或 `null` 时改为数字 `2`，已有的 `cyclingEventStatisticFlag` 改为 `true`。不新增缺失字段；`vehicleKinds` 的其他值与 `vehicleType` 等车型字段保持原值。每日记录和历史行程中的空显示字段也会处理。此规则不改速度和轨迹，急刹/压弯估算与缓存作为已启用的独立功能继续保留。
 
 所有云端已有非零统计优先保留。日/月回填是**已加载轨迹的累计估算，可能只是下界**；未打开的历史行程不会自动补齐，不应视为完整官方月报。全历史累计字段如 `bendingTimesTotal` 保留原值，避免把部分缓存当成全部历史。急加速次数等沿用云端数据，没有新增估算。
 
@@ -46,6 +48,6 @@ Loon 每个响应阶段只选中一条 Response Script；匹配同一 URL 的旧
 node --test loon/tests/ride-fill.test.mjs
 ```
 
-19 项离线模拟测试覆盖带车辆编号的首页路径、车辆列表车型改写、插件实际路由、急刹/转弯/直线、跨请求缓存、非零与零结果命中后跳过计算和写入、新旧行程混合回填、清空后重新计算、车辆/账号隔离、云端值优先、日期与时间戳、异常轨迹、错误响应、存储失败和手动缓存操作。**未执行真实账号 API、真实轨迹或 iPhone/Loon 运行测试。** 发布检查验证明文插件的作者、远程脚本地址和文件哈希，不能替代手机导入验证。
+23 项离线模拟测试覆盖带车辆编号的首页路径、车辆列表车型改写、每日/历史行程的空显示字段、车型值条件与业务码校验、插件实际路由、急刹/转弯/直线、跨请求缓存、非零与零结果命中后跳过计算和写入、新旧行程混合回填、清空后重新计算、车辆/账号隔离、云端值优先、日期与时间戳、异常轨迹、错误响应、存储失败和手动缓存操作。**未执行真实账号 API、真实轨迹或 iPhone/Loon 运行测试。** 发布检查验证明文插件的作者、远程脚本地址和文件哈希，不能替代手机导入验证。
 
 插件和脚本均为明文，可在 GitHub 直接查看。首次安装与更新脚本时需要能访问 GitHub 原始文件域名。替换旧插件时保留 Loon 本地存储，已有计算缓存继续复用。

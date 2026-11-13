@@ -223,7 +223,8 @@ function fill(obj,key,value) {
 }
 function gate(obj,depth) {
   if(!obj || typeof obj!=='object' || depth>8) return;
-  if(own(obj,'vehicleKinds')) obj.vehicleKinds=2;
+  var kinds=obj.vehicleKinds;
+  if(own(obj,'vehicleKinds') && (kinds===1 || kinds===4 || kinds==='1' || kinds==='4' || kinds===null)) obj.vehicleKinds=2;
   if(own(obj,'cyclingEventStatisticFlag')) obj.cyclingEventStatisticFlag=true;
   Object.keys(obj).forEach(function(k) { if(obj[k] && typeof obj[k]==='object') gate(obj[k],depth+1); });
 }
@@ -267,12 +268,13 @@ function main() {
   if(!/^(200|HTTP\/\S+ 200(?:\s.*)?)$/.test(status)) return {};
   if(typeof res.body!=='string' || res.body.length>8000000) return {};
   var obj=JSON.parse(res.body);
-  if(!obj || typeof obj!=='object' || (obj.code!==undefined && String(obj.code)!=='10000')) return {};
+  if(!obj || typeof obj!=='object' || String(obj.code)!=='10000') return {};
   var original=JSON.stringify(obj);
   var data=obj.data, type=match[1]; if(!data || typeof data!=='object') return {};
   if(type.indexOf('vehicleHomePageV2/')===0) type='vehicleHomePageV2';
+  if(type==='vehicleHomePageV2' || type==='vehicle/list' || type==='myRideInfo' || type==='ridetrack_v2') gate(data,0);
   if(type==='vehicleHomePageV2' || type==='vehicle/list') {
-    gate(data,0); var gated=JSON.stringify(obj); return gated===original ? {} : {body:gated};
+    var gated=JSON.stringify(obj); return gated===original ? {} : {body:gated};
   }
   var q=query(url), scope=identity(req,q,data), db=load();
   var rides=scope && own(db.scopes,scope) ? db.scopes[scope] : {};
