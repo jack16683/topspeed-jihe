@@ -1,29 +1,27 @@
-// Uses the official Loon website packager already present on this machine.
-// Set LOON_PACKAGER_DIR to a directory with pluginEncryption.mjs and publicKey.json.
+// Validate the plain plugin and create its source archive using Python's standard library.
 import fs from 'node:fs';
-import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
-import {pathToFileURL} from 'node:url';
-const dir=process.env.LOON_PACKAGER_DIR;
-if(!dir) throw new Error('Set LOON_PACKAGER_DIR to the official Loon packager directory.');
-const {readPluginInput,analyzePlugin,encryptPluginPackage}=await import(pathToFileURL(path.join(dir,'pluginEncryption.mjs')));
-const names=['极速鸡盒.plugin','scripts/ride-fill.js','scripts/cache-tools.js'];
-const files=names.map(p=>{const f=new File([fs.readFileSync(path.join('loon',p))],path.basename(p));Object.defineProperty(f,'webkitRelativePath',{value:'plugin/'+p});return f;});
-const state=await readPluginInput(files,{directory:true});
-const analysis=analyzePlugin(state.entries,names[0]);
-assert.deepEqual(analysis.errors,[]);assert.equal(analysis.references.length,3);
-assert.ok(analysis.references.every(r=>r.source==='package'));
-const native=crypto.webcrypto, checks=[];
-const validating={getRandomValues:native.getRandomValues.bind(native),subtle:new Proxy(native.subtle,{get(target,prop){
-  if(prop==='importKey')return async(format,data,algorithm,extractable,usages)=>target.importKey(format,data,algorithm,extractable,(typeof algorithm==='string'?algorithm:algorithm.name)==='AES-GCM'?[...new Set([...usages,'decrypt'])]:usages);
-  if(prop==='encrypt')return async(algorithm,key,data)=>{const original=new Uint8Array(data).slice();const result=await target.encrypt(algorithm,key,data);if(algorithm.name==='AES-GCM'){assert.deepEqual(new Uint8Array(await target.decrypt(algorithm,key,result)),original);checks.push(original.length);}return result;};
-  const value=target[prop];return typeof value==='function'?value.bind(target):value;
-}})};
-globalThis.fetch=()=>{throw new Error('Network disabled while packaging');};
-const config=JSON.parse(fs.readFileSync(path.join(dir,'publicKey.json'),'utf8'));
-const bytes=Buffer.from(await encryptPluginPackage(state.entries,names[0],config,validating));
-assert.equal(bytes.subarray(0,4).toString(),'LPXE');assert.equal(bytes[4],2);assert.equal(checks.length,3);
-fs.mkdirSync('outputs',{recursive:true});fs.writeFileSync('outputs/极速鸡盒.lpxe',bytes);
-const report={format:'LPXE v2',bundledScripts:2,remoteResources:0,aesRoundTrips:checks.length,bytes:bytes.length,sha256:crypto.createHash('sha256').update(bytes).digest('hex'),referenceCommit:'bd17ef6e9ad01ec135aeba8666391e1e259a8234',offlineTests:16,cachePolicy:'reuse-existing-including-zero',deviceValidated:false};
-fs.writeFileSync('outputs/validation.json',JSON.stringify(report,null,2)+'\n');console.log(report);
+import {spawnSync} from 'node:child_process';
+const entry='loon/极速鸡盒.plugin';
+const base='https://raw.githubusercontent.com/jack16683/topspeed-jihe/main/';
+const source=fs.readFileSync(entry,'utf8');
+assert.match(source,/^#!name = 极速鸡盒$/m);
+assert.match(source,/^#!desc = 知道你的鸡盒到底有多快$/m);
+assert.match(source,/^#!author = jack16683$/m);
+const references=[...source.matchAll(/\bscript\("([^\"]+)"/g)].map(m=>m[1]);
+assert.equal(references.length,3);
+const scripts=[...new Set(references)];
+assert.deepEqual(scripts,[base+'loon/scripts/ride-fill.js',base+'loon/scripts/cache-tools.js']);
+const digest=p=>crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const remoteScripts=scripts.map(url=>{const path=url.slice(base.length);assert.ok(fs.statSync(path).isFile());return {url,path,sha256:digest(path)};});
+fs.mkdirSync('outputs',{recursive:true});
+const report={format:'plain-plugin',author:'jack16683',plugin:{path:entry,url:base+'loon/'+encodeURIComponent('极速鸡盒.plugin'),sha256:digest(entry)},remoteScripts,offlineTests:16,cachePolicy:'reuse-existing-including-zero',deviceValidated:false};
+fs.writeFileSync('outputs/validation.json',JSON.stringify(report,null,2)+'\n');
+const files=['README.md','LICENSE','NOTICE','package-loon.mjs','loon/README.md','loon/LICENSE',entry,'loon/scripts/ride-fill.js','loon/scripts/cache-tools.js','loon/tests/ride-fill.test.mjs'];
+const archive='outputs/极速鸡盒-source.zip';
+const python="from pathlib import Path\nimport sys,json,zipfile\nfiles=json.loads(sys.argv[1]); target=sys.argv[2]\nwith zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as z:\n for f in files:z.write(f,'极速鸡盒/'+f)\nwith zipfile.ZipFile(target) as z:\n assert z.testzip() is None\n for f in files:assert z.read('极速鸡盒/'+f)==Path(f).read_bytes()\n";
+const result=spawnSync('python3',['-c',python,JSON.stringify(files),archive],{encoding:'utf8'});
+if(result.error) throw result.error;
+assert.equal(result.status,0,result.stderr);
+console.log(JSON.stringify({format:report.format,author:report.author,remoteScripts:scripts.length,sourceFiles:files.length,pluginSHA256:report.plugin.sha256}));
