@@ -170,6 +170,32 @@ function gate(obj,depth) {
   if(own(obj,'cyclingEventStatisticFlag')) obj.cyclingEventStatisticFlag=true;
   Object.keys(obj).forEach(function(k) { if(obj[k] && typeof obj[k]==='object') gate(obj[k],depth+1); });
 }
+function gateVehicleResponse(raw,obj,original) {
+  // The App reuses numeric IDs from these responses in later requests.
+  // Keep oversized integer literals out of JSON.parse's Number conversion.
+  var prefix='__jihe_exact_integer_', literals=Object.create(null), count=0;
+  while(original.indexOf(prefix)!==-1) prefix+='_';
+  var tokens=/"(?:[^"\\]|\\[\s\S])*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+  var protectedBody=raw.replace(tokens,function(token) {
+    if(!/^-?\d{16,}$/.test(token) || Number.isSafeInteger(Number(token))) return token;
+    var marker=JSON.stringify(prefix+(count++));
+    literals[marker]=token;
+    return marker;
+  });
+  if(count) {
+    obj=JSON.parse(protectedBody);
+    original=JSON.stringify(obj);
+  }
+  gate(obj.data,0);
+  var gated=JSON.stringify(obj);
+  if(gated===original) return {};
+  if(count) {
+    gated=gated.replace(/"(?:[^"\\]|\\[\s\S])*"/g,function(token) {
+      return own(literals,token) ? literals[token] : token;
+    });
+  }
+  return {body:gated};
+}
 function sums(rides,date,prefix) {
   var b=0,d=0,n=0,bKnown=true,dKnown=false;
   Object.keys(rides).forEach(function(k) {
@@ -214,10 +240,8 @@ function main() {
   var original=JSON.stringify(obj);
   var data=obj.data, type=match[1]; if(!data || typeof data!=='object') return {};
   if(type.indexOf('vehicleHomePageV2/')===0) type='vehicleHomePageV2';
-  if(type==='vehicleHomePageV2' || type==='vehicle/list' || type==='myRideInfo' || type==='ridetrack_v2') gate(data,0);
-  if(type==='vehicleHomePageV2' || type==='vehicle/list') {
-    var gated=JSON.stringify(obj); return gated===original ? {} : {body:gated};
-  }
+  if(type==='vehicleHomePageV2' || type==='vehicle/list') return gateVehicleResponse(res.body,obj,original);
+  if(type==='myRideInfo' || type==='ridetrack_v2') gate(data,0);
   var q=query(url), scope=identity(req,q,data), db=load();
   var scoped=scope?P.key+'|'+scope:'';
   var rides=scoped && own(db.scopes,scoped) ? db.scopes[scoped] : {};

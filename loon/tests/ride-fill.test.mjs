@@ -44,6 +44,19 @@ test('vehicle home page with VIN in path rewrites vehicle kinds and event gate',
   assert.equal(r.store.size,0);
  }
 });
+test('vehicle display rewrites preserve oversized JSON integers as exact numeric literals',()=>{
+ const raw=String.raw`{"code":"10000","data":{"bindingUserId":9007199254740993,"vehicleKinds":4,"cyclingEventStatisticFlag":false,"nested":[-9007199254740995,9007199254740991,"9007199254740993","quoted \"bindingUserId\": 9007199254740993"],"note":"\u005f_jihe_exact_integer_0"}}`;
+ const expected=raw
+  .replace('"vehicleKinds":4','"vehicleKinds":2')
+  .replace('"cyclingEventStatisticFlag":false','"cyclingEventStatisticFlag":true')
+  .replace(String.raw`\u005f`,'_');
+ for(const endpoint of ['vehicleHomePageV2/TESTVIN12345678901','vehicle/list']) {
+  const patched=run(endpoint,null,{raw});
+  assert.equal(patched.patch.body,expected);
+  assert.equal(patched.writes,0);
+  assert.deepEqual(Object.keys(run(endpoint,null,{raw:expected}).patch),[]);
+ }
+});
 test('vehicle list rewrites display type for each vehicle without changing model fields',()=>{
  const r=run('vehicle/list',[{vehicleKinds:4,vehicleType:'MODEL_A',cyclingEventStatisticFlag:false},{vehicleKinds:'4',vehicleType:'MODEL_B',cyclingEventStatisticFlag:false}]);
  assert.deepEqual(r.data,[{vehicleKinds:2,vehicleType:'MODEL_A',cyclingEventStatisticFlag:true},{vehicleKinds:2,vehicleType:'MODEL_B',cyclingEventStatisticFlag:true}]);
